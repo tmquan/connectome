@@ -1,14 +1,14 @@
 """
 Instance Segmentation Metrics
 
-Implements metrics for evaluating instance segmentation quality using TorchMetrics:
-- Adjusted Rand Score (ARI)
+Implements metrics for evaluating instance segmentation quality:
+- Adjusted Rand Score (ARI) - using sklearn for correctness
 - Normalized Mutual Information (NMI)
 - Rand Score
 - Variation of Information (VI)
 
-Uses TorchMetrics for GPU-accelerated, Lightning-compatible metrics.
-Reference: https://lightning.ai/docs/torchmetrics/stable/clustering/adjusted_rand_score.html
+Uses sklearn for ARI (guaranteed correct implementation).
+Uses TorchMetrics for other clustering metrics.
 """
 
 import torch
@@ -23,7 +23,7 @@ from torchmetrics.clustering import (
     RandScore,
     AdjustedMutualInfoScore
 )
-from torchmetrics.functional.clustering import adjusted_rand_score as tm_adjusted_rand_score
+from sklearn.metrics import adjusted_rand_score as sklearn_ari
 
 
 def cluster_embeddings_for_metrics(
@@ -146,7 +146,7 @@ def compute_adjusted_rand_score(
     semantic_mask: Optional[torch.Tensor] = None
 ) -> torch.Tensor:
     """
-    Compute Adjusted Rand Score using TorchMetrics.
+    Compute Adjusted Rand Score using sklearn (gold standard implementation).
     
     ARI is mathematically guaranteed to be in [-1, 1]:
     - 1.0: Perfect clustering
@@ -162,45 +162,32 @@ def compute_adjusted_rand_score(
         ARI score as tensor in [-1, 1]
     """
     device = pred_instances.device
-    pred_flat = pred_instances.flatten().long()
-    true_flat = true_instances.flatten().long()
+    
+    # Move to CPU and convert to numpy for sklearn
+    pred_flat = pred_instances.flatten().cpu().numpy()
+    true_flat = true_instances.flatten().cpu().numpy()
     
     if semantic_mask is not None:
-        mask_flat = semantic_mask.flatten() > 0
+        mask_flat = semantic_mask.flatten().cpu().numpy() > 0
         pred_flat = pred_flat[mask_flat]
         true_flat = true_flat[mask_flat]
     
-    # Edge case: no samples
-    if len(pred_flat) == 0 or len(true_flat) == 0:
-        return torch.tensor(0.0, device=device)
-    
-    # Edge case: too few samples for meaningful ARI
+    # Edge case: no samples or too few
     if len(pred_flat) < 2:
         return torch.tensor(0.0, device=device)
     
     # Edge case: all same label in pred or true (degenerate clustering)
-    n_pred_unique = len(torch.unique(pred_flat))
-    n_true_unique = len(torch.unique(true_flat))
+    n_pred_unique = len(np.unique(pred_flat))
+    n_true_unique = len(np.unique(true_flat))
     
     if n_pred_unique == 1 or n_true_unique == 1:
         # ARI is undefined when one clustering has only one cluster
-        # Return 0 (random clustering equivalent)
         return torch.tensor(0.0, device=device)
     
-    # Use TorchMetrics functional API
-    try:
-        ari = tm_adjusted_rand_score(pred_flat, true_flat)
-        
-        # Validate result is in valid range
-        if not (-1.0 <= ari.item() <= 1.0):
-            # This can happen due to numerical issues with very small samples
-            print(f"Warning: ARI={ari.item():.4f} out of range, returning 0.0")
-            return torch.tensor(0.0, device=device)
-        
-        return ari
-    except Exception as e:
-        print(f"Warning: ARI computation failed: {e}, returning 0.0")
-        return torch.tensor(0.0, device=device)
+    # Use sklearn - guaranteed correct implementation
+    ari = sklearn_ari(true_flat, pred_flat)
+    
+    return torch.tensor(ari, device=device, dtype=torch.float32)
 
 
 def compute_rand_score(
