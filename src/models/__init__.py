@@ -21,6 +21,15 @@ from .components.discriminative import (
     ContrastiveLoss,
     AffinityLoss
 )
+from .metrics import (
+    InstanceSegmentationMetric,
+    InstanceSegmentationMetrics,
+    compute_adjusted_rand_score,
+    compute_rand_score,
+    compute_normalized_mutual_info,
+    compute_variation_of_information,
+    cluster_embeddings_for_metrics
+)
 
 __all__ = [
     # Models
@@ -35,5 +44,13 @@ __all__ = [
     'DiscriminativeLossVectorized',
     'CombinedInstanceLoss',
     'ContrastiveLoss',
-    'AffinityLoss'
+    'AffinityLoss',
+    # Metrics (TorchMetrics-based)
+    'InstanceSegmentationMetric',
+    'InstanceSegmentationMetrics',
+    'compute_adjusted_rand_score',
+    'compute_rand_score',
+    'compute_normalized_mutual_info',
+    'compute_variation_of_information',
+    'cluster_embeddings_for_metrics'
 ]

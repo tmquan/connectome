@@ -82,7 +82,9 @@ connectome/
 │   ├── model/
 │   │   └── vista_connectomics.yaml
 │   ├── data/
-│   │   └── em_grid.yaml
+│   │   ├── snemi3d.yaml          # SNEMI3D neuron dataset
+│   │   ├── mitoem2.yaml          # MitoEM2 mitochondria dataset
+│   │   └── combined.yaml         # Combined multi-dataset training
 │   ├── training/
 │   │   └── default_trainer.yaml
 │   └── callbacks/
@@ -90,13 +92,20 @@ connectome/
 ├── src/
 │   ├── models/
 │   │   ├── vista_wrapper.py      # VistaLightningModule
+│   │   ├── metrics.py            # ARI and clustering metrics
 │   │   └── components/
 │   │       └── discriminative.py # Discriminative Loss
 │   ├── data/
-│   │   └── datamodule.py         # ConnectomicsDataModule
+│   │   ├── datamodule.py         # SNEMI3D, MitoEM2, CombinedDataModule
+│   │   └── readers.py            # TIFF, H5, NIfTI readers
+│   ├── callbacks/
+│   │   └── visualization.py      # TensorBoard visualization
 │   └── utils/
 │       ├── registry.py           # Label Registry
 │       └── clustering.py         # Post-processing
+├── data/                         # Symlinks to datasets
+│   ├── SNEMI3D/                  # -> /scratch/SNEMI3D/data
+│   └── MitoEM2/                  # -> /scratch/MitoEM2
 ├── main.py                       # Training entry point
 ├── requirements.txt
 └── README.md
@@ -104,44 +113,58 @@ connectome/
 
 ## Data Preparation
 
-### Expected Data Format
+### Supported Formats
 
-The pipeline expects data in the Medical Segmentation Decathlon (MSD) JSON format:
+The pipeline supports multiple data formats with automatic detection:
 
-```json
-{
-  "description": "Connectomics EM Dataset",
-  "labels": {
-    "0": "background",
-    "1": "neuron",
-    "2": "mitochondria",
-    "3": "membrane",
-    "4": "synapse"
-  },
-  "training": [
-    {
-      "image": "volumes/sample_001.nii.gz",
-      "label": "labels/sample_001.nii.gz"
-    }
-  ],
-  "validation": [...],
-  "test": [...]
-}
+| Format | Extensions | Description |
+|--------|------------|-------------|
+| TIFF | `.tiff`, `.tif` | Multi-page 3D volumes (SNEMI3D) |
+| NIfTI | `.nii.gz`, `.nii` | Medical imaging format (MitoEM2) |
+| HDF5 | `.h5`, `.hdf5` | Hierarchical data format |
+
+### SNEMI3D Format
+
+```
+data/SNEMI3D/
+├── AC3_inputs.tiff    # EM images (100, 1024, 1024) uint8
+├── AC3_labels.tiff    # Instance labels (100, 1024, 1024) uint16
+├── AC4_inputs.tiff
+└── AC4_labels.tiff
+```
+
+### MitoEM2 Format (nnUNet-style)
+
+```
+data/MitoEM2/
+└── Dataset001_ME2-Beta/
+    ├── imagesTr/
+    │   └── me2-beta_train01_0000.nii.gz
+    └── labelsTr/
+        └── me2-beta_train01.nii.gz
 ```
 
 ### Label Format
 
-Labels should be multi-channel NIfTI files:
-- **Channel 0**: Semantic class IDs (0=background, 1=neuron, 2=mitochondria, etc.)
-- **Channel 1**: Instance IDs (unique integer per neuron instance)
+Labels are instance segmentation masks:
+- **Value 0**: Background
+- **Value 1+**: Unique instance IDs (e.g., individual neurons or mitochondria)
+
+The semantic class is assigned based on the dataset configuration (`semantic_class_id`).
 
 ## Usage
 
 ### Training
 
 ```bash
-# Basic training
+# Basic training (SNEMI3D neurons only)
 python main.py
+
+# Train with MitoEM2 mitochondria only
+python main.py data=mitoem2
+
+# Train with combined datasets (neurons + mitochondria)
+python main.py data=combined
 
 # Override parameters
 python main.py \
@@ -149,16 +172,26 @@ python main.py \
     training.max_epochs=200 \
     data.batch_size=4
 
-# Multi-GPU training
+# Multi-GPU training with combined datasets
 python main.py \
+    data=snemi3d \
+    data.batch_size=1 \
     training.devices=4 \
-    training.strategy=ddp
+    training.strategy=ddp_find_unused_parameters_true
 
 # Hyperparameter sweep
 python main.py --multirun \
     model.net_config.embedding_dim=8,16,32 \
     model.loss_config.discriminative.delta_var=0.3,0.5,0.7
 ```
+
+### Supported Datasets
+
+| Dataset | Data Config | Semantic Class | Description |
+|---------|-------------|----------------|-------------|
+| SNEMI3D | `data=snemi3d` | neuron (1) | Neurite instance segmentation |
+| MitoEM2 | `data=mitoem2` | mitochondria (2) | Mitochondria in 8 cell types |
+| Combined | `data=combined` | both | Multi-task training |
 
 ### Inference
 
@@ -198,13 +231,33 @@ instance_mask = cluster_embeddings(
 | `loss_config.discriminative.delta_var` | Variance loss margin | 0.5 |
 | `loss_config.discriminative.delta_dist` | Distance loss margin | 1.5 |
 
-### Data Configuration (`conf/data/em_grid.yaml`)
+### Data Configuration (`conf/data/snemi3d.yaml`, `combined.yaml`)
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `patch_size` | Training patch dimensions | 128 |
+| `patch_size` | Training patch dimensions (D, H, W) | [32, 256, 256] |
 | `batch_size` | Training batch size | 2 |
-| `cache_rate` | Dataset caching ratio | 1.0 |
+| `patches_per_volume` | Patches sampled per epoch per volume | 100 |
+| `cache_volumes` | Cache volumes in memory | true |
+| `semantic_class_id` | Semantic class ID for dataset | 1 (neuron) |
+
+### Combined Dataset Configuration (`conf/data/combined.yaml`)
+
+```yaml
+datasets:
+  - type: snemi3d
+    data_root: "data/SNEMI3D/"
+    train_volumes: ["AC3"]
+    val_volumes: ["AC4"]
+    semantic_class_id: 1  # neuron
+  
+  - type: mitoem2
+    data_root: "data/MitoEM2/"
+    datasets:
+      - "Dataset001_ME2-Beta"
+      - "Dataset006_ME2-Pyra"
+    semantic_class_id: 2  # mitochondria
+```
 
 ## Discriminative Loss
 

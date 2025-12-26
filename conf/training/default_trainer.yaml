@@ -2,7 +2,7 @@
 # PyTorch Lightning Trainer settings
 
 # Training duration
-max_epochs: 100
+max_epochs: 1000
 max_steps: -1  # -1 means unlimited, use max_epochs
 
 # Hardware configuration

@@ -1,23 +1,29 @@
 # MitoEM 2.0 Data Configuration
 # Mitochondria instance segmentation dataset
-# Uses nnUNet-style folder structure
+# Uses nnUNet-style folder structure with NIfTI files
 
 _target_: src.data.datamodule.MitoEM2DataModule
 
-# Data root - point to extracted dataset folder
-# e.g., /localhome/local-tranminhq/tmp/MitoEM2/Dataset001_ME2-Beta/
-data_root: "data/MitoEM2/"
+# Data root - point to MitoEM2 folder containing dataset subfolders
+data_root: "data/MitoEM2/Dataset001_ME2-Beta/"
 
-# File paths (relative to data_root)
-# For nnUNet format: imagesTr/{name}_0000.tif, labelsTr/{name}.tif
-train_image_paths: []  # To be populated based on dataset
-train_label_paths: []
-val_image_paths: []
-val_label_paths: []
+# File paths (relative to data_root) - auto-populated from dataset
+# For nnUNet format: imagesTr/{name}_0000.nii.gz, labelsTr/{name}.nii.gz
+train_image_paths:
+  - "imagesTr/me2-beta_train01_0000.nii.gz"
+  - "imagesTr/me2-beta_train02_0000.nii.gz"
+  - "imagesTr/me2-beta_train03_0000.nii.gz"
+train_label_paths:
+  - "labelsTr/me2-beta_train01.nii.gz"
+  - "labelsTr/me2-beta_train02.nii.gz"
+  - "labelsTr/me2-beta_train03.nii.gz"
+val_image_paths:
+  - "imagesTr/me2-beta_train04_0000.nii.gz"
+val_label_paths:
+  - "labelsTr/me2-beta_train04.nii.gz"
 
 # Patch configuration
-# MitoEM volumes vary in size, use smaller patches for memory
-patch_size: [64, 256, 256]  # (D, H, W)
+patch_size: [32, 256, 256]  # (D, H, W)
 
 # Sampling
 patches_per_volume: 100
@@ -33,16 +39,8 @@ cache_volumes: true
 # Semantic class: mitochondria = 2 (from nlp_labels registry)
 semantic_class_id: 2
 
-# Augmentation (inherited from base)
+# Augmentation
 augmentation:
   enabled: true
   random_flip_prob: 0.5
   random_rotate_prob: 0.5
-  intensity_shift:
-    enabled: true
-    offset_range: [-0.1, 0.1]
-    scale_range: [0.9, 1.1]
-  gaussian_noise:
-    enabled: true
-    std: 0.05
-

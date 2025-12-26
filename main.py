@@ -10,14 +10,20 @@ This script follows the cosmed repository patterns:
 - MONAI data pipelines
 
 Usage:
-    # Training with default config
+    # Training with default config (SNEMI3D neurons only)
     python main.py
+    
+    # Train with combined datasets (neurons + mitochondria)
+    python main.py data=combined
+    
+    # Train with MitoEM2 only
+    python main.py data=mitoem2
     
     # Override specific parameters
     python main.py model.net_config.embedding_dim=32 training.max_epochs=200
     
-    # Multi-GPU training
-    python main.py training.devices=4 training.strategy=ddp
+    # Multi-GPU training with combined datasets
+    python main.py data=combined training.devices=4 training.strategy=ddp_find_unused_parameters_true
     
     # Run hyperparameter sweep
     python main.py --multirun model.net_config.embedding_dim=8,16,32
@@ -44,7 +50,12 @@ from omegaconf import DictConfig, OmegaConf
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.models.vista_wrapper import VistaLightningModule
-from src.data.datamodule import ConnectomicsDataModule, SNEMI3DDataModule
+from src.data.datamodule import (
+    ConnectomicsDataModule, 
+    SNEMI3DDataModule,
+    MitoEM2DataModule,
+    CombinedDataModule
+)
 from src.utils.registry import LabelRegistry
 from src.callbacks.visualization import VisualizationCallback, EmbeddingHistogramCallback
 
@@ -163,7 +174,19 @@ def main(cfg: DictConfig):
     
     # 3. Initialize DataModule
     # Use Hydra instantiation to support different datamodule types
+    # Supported: snemi3d, mitoem2, combined
     datamodule = hydra.utils.instantiate(cfg.data)
+    
+    # Print datamodule info
+    datamodule_type = cfg.data.get('_target_', 'Unknown').split('.')[-1]
+    print(f"\nDataModule: {datamodule_type}")
+    if hasattr(cfg.data, 'datasets'):
+        print(f"  Combined datasets:")
+        for ds in cfg.data.datasets:
+            print(f"    - {ds.type}: {ds.data_root} (class_id={ds.semantic_class_id})")
+    elif hasattr(cfg.data, 'train_volumes'):
+        print(f"  Train volumes: {list(cfg.data.train_volumes)}")
+        print(f"  Val volumes: {list(cfg.data.val_volumes)}")
     
     # 4. Initialize Model
     model = VistaLightningModule(

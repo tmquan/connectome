@@ -8,6 +8,7 @@ torchvision>=0.15.0
 # PyTorch Lightning
 pytorch-lightning>=2.0.0
 lightning>=2.0.0
+torchmetrics>=1.0.0  # GPU-accelerated metrics
 
 # Medical Imaging
 monai>=1.3.0

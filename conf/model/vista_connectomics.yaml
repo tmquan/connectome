@@ -9,7 +9,7 @@ net_config:
   in_channels: 1
   feature_dim: 48
   embedding_dim: 16
-  dropout: 0.2
+  dropout: 0.5
   blocks_down: [1, 2, 2, 4]
   blocks_up: [1, 1, 1]
   

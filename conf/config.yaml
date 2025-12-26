@@ -3,10 +3,14 @@
 
 defaults:
   - model: vista_connectomics
-  - data: snemi3d
+  - data: snemi3d  # Options: snemi3d, mitoem2, combined
   - training: default_trainer
   - callbacks: checkpoint
   - _self_
+
+# Override data config from command line:
+#   python main.py data=combined     # Train on SNEMI3D + MitoEM2
+#   python main.py data=mitoem2      # Train on MitoEM2 only
 
 project_name: "VISTA_Connectomics"
 seed: 42

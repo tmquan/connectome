@@ -1,28 +1,28 @@
 # Callbacks Configuration
 # Model checkpointing and training callbacks
 
-# Model Checkpoint
+# Model Checkpoint - based on Adjusted Rand Score (higher is better)
 checkpoint:
   _target_: pytorch_lightning.callbacks.ModelCheckpoint
   dirpath: "checkpoints"
-  filename: "vista-{epoch:02d}-{train_loss_disc:.4f}"
+  filename: "vista-{epoch:02d}-{val_ari:.4f}"
   save_top_k: 3
-  monitor: "train/loss_disc"
-  mode: "min"
+  monitor: "val/ari"
+  mode: "max"  # ARI: higher is better (1.0 = perfect)
   save_last: true
   save_weights_only: false
   every_n_epochs: 1
   verbose: true
 
-# Early Stopping
+# Early Stopping - based on Adjusted Rand Score
 early_stopping:
   _target_: pytorch_lightning.callbacks.EarlyStopping
-  monitor: "val/loss"
+  monitor: "val/ari"
   patience: 20
-  mode: "min"
+  mode: "max"  # ARI: higher is better
   min_delta: 0.001
   verbose: true
-  strict: true
+  strict: false  # Don't fail if metric not found initially
 
 # Learning Rate Monitor
 lr_monitor:
@@ -52,7 +52,7 @@ visualization:
   log_every_n_steps: 100      # Log images every N training steps
   num_samples: 2              # Number of samples to visualize per batch
   slice_idx: null             # Z-slice to visualize (null = middle)
-  embedding_viz_method: "channels" # 'pca' or 'channels' for embedding visualization
+  embedding_viz_method: "pca" # 'pca' or 'channels' for embedding visualization
   log_on_train: true          # Log during training
   log_on_val: true            # Log during validation
   log_histograms: true        # Log embedding histograms

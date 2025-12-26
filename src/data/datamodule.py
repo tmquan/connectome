@@ -1098,3 +1098,217 @@ class VolumeSliceDataset(TorchDataset):
             'coordinates': torch.tensor([z, y, x]),
             'patch_size': torch.tensor(self.patch_size)
         }
+
+
+class CombinedDataModule(pl.LightningDataModule):
+    """
+    Combined DataModule for multiple connectomics datasets.
+    
+    Supports combining SNEMI3D (neurons) and MitoEM2 (mitochondria) datasets
+    into a single training pipeline.
+    
+    Args:
+        datasets: List of dataset configurations, each containing:
+            - type: 'snemi3d' or 'mitoem2'
+            - data_root: Path to dataset
+            - volumes/datasets: Volume names or dataset folders
+            - semantic_class_id: Class ID for this dataset
+        patch_size: Patch size (D, H, W)
+        patches_per_volume: Patches per volume per epoch
+        batch_size: Batch size
+        num_workers: Number of data loading workers
+        pin_memory: Pin memory for faster GPU transfer
+        cache_volumes: Cache volumes in memory
+    """
+    
+    def __init__(
+        self,
+        datasets: List[Dict[str, Any]] = None,
+        patch_size: Union[int, List[int], Tuple[int, ...]] = (32, 256, 256),
+        patches_per_volume: int = 100,
+        batch_size: int = 2,
+        num_workers: int = 4,
+        pin_memory: bool = True,
+        cache_volumes: bool = True,
+        **kwargs
+    ):
+        super().__init__()
+        
+        self.dataset_configs = datasets or []
+        
+        # Handle patch_size formats
+        if isinstance(patch_size, int):
+            self.patch_size = (patch_size, patch_size, patch_size)
+        else:
+            try:
+                self.patch_size = tuple(patch_size)
+            except (TypeError, ValueError):
+                self.patch_size = (32, 256, 256)
+        
+        self.patches_per_volume = patches_per_volume
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.pin_memory = pin_memory
+        self.cache_volumes = cache_volumes
+        
+        self.train_ds = None
+        self.val_ds = None
+        
+        print(f"[CombinedDataModule] patch_size: {self.patch_size}")
+        print(f"[CombinedDataModule] datasets: {len(self.dataset_configs)}")
+    
+    def _create_snemi3d_dataset(
+        self,
+        config: Dict[str, Any],
+        is_train: bool = True
+    ) -> TorchDataset:
+        """Create SNEMI3D dataset from config."""
+        data_root = config.get('data_root', 'data/SNEMI3D/')
+        volumes = config.get('train_volumes' if is_train else 'val_volumes', [])
+        semantic_class_id = config.get('semantic_class_id', 1)  # neuron
+        
+        if not volumes:
+            return None
+        
+        return SNEMI3DDataset(
+            data_root=data_root,
+            volumes=volumes,
+            patch_size=self.patch_size,
+            patches_per_volume=self.patches_per_volume if is_train else self.patches_per_volume // 4,
+            augment=is_train,
+            cache_volumes=self.cache_volumes,
+            semantic_class_id=semantic_class_id
+        )
+    
+    def _create_mitoem2_dataset(
+        self,
+        config: Dict[str, Any],
+        is_train: bool = True
+    ) -> TorchDataset:
+        """Create MitoEM2 dataset from config."""
+        import glob
+        
+        data_root = config.get('data_root', 'data/MitoEM2/')
+        dataset_folders = config.get('datasets', [])
+        semantic_class_id = config.get('semantic_class_id', 2)  # mitochondria
+        train_ratio = config.get('train_ratio', 0.8)
+        
+        if not dataset_folders:
+            return None
+        
+        all_image_paths = []
+        all_label_paths = []
+        
+        for folder in dataset_folders:
+            folder_path = Path(data_root) / folder
+            images_dir = folder_path / 'imagesTr'
+            labels_dir = folder_path / 'labelsTr'
+            
+            # Support both .nii.gz and .tif files
+            image_files = sorted(
+                glob.glob(str(images_dir / '*_0000.nii.gz')) +
+                glob.glob(str(images_dir / '*_0000.tif'))
+            )
+            
+            for img_path in image_files:
+                img_name = Path(img_path).name
+                # Convert image name to label name (remove _0000 suffix)
+                if img_name.endswith('_0000.nii.gz'):
+                    lbl_name = img_name.replace('_0000.nii.gz', '.nii.gz')
+                else:
+                    lbl_name = img_name.replace('_0000.tif', '.tif')
+                
+                lbl_path = labels_dir / lbl_name
+                
+                if lbl_path.exists():
+                    # Store paths relative to data_root
+                    rel_img = str(Path(folder) / 'imagesTr' / img_name)
+                    rel_lbl = str(Path(folder) / 'labelsTr' / lbl_name)
+                    all_image_paths.append(rel_img)
+                    all_label_paths.append(rel_lbl)
+        
+        if not all_image_paths:
+            return None
+        
+        # Split train/val
+        n_train = int(len(all_image_paths) * train_ratio)
+        
+        if is_train:
+            image_paths = all_image_paths[:n_train]
+            label_paths = all_label_paths[:n_train]
+        else:
+            image_paths = all_image_paths[n_train:]
+            label_paths = all_label_paths[n_train:]
+        
+        if not image_paths:
+            return None
+        
+        return MitoEM2Dataset(
+            data_root=data_root,
+            image_paths=image_paths,
+            label_paths=label_paths,
+            patch_size=self.patch_size,
+            patches_per_volume=self.patches_per_volume if is_train else self.patches_per_volume // 4,
+            augment=is_train,
+            cache_volumes=self.cache_volumes,
+            semantic_class_id=semantic_class_id
+        )
+    
+    def setup(self, stage: Optional[str] = None):
+        """Setup combined datasets."""
+        if stage == 'fit' or stage is None:
+            train_datasets = []
+            val_datasets = []
+            
+            for config in self.dataset_configs:
+                ds_type = config.get('type', 'snemi3d').lower()
+                
+                if ds_type == 'snemi3d':
+                    train_ds = self._create_snemi3d_dataset(config, is_train=True)
+                    val_ds = self._create_snemi3d_dataset(config, is_train=False)
+                elif ds_type == 'mitoem2':
+                    train_ds = self._create_mitoem2_dataset(config, is_train=True)
+                    val_ds = self._create_mitoem2_dataset(config, is_train=False)
+                else:
+                    print(f"Warning: Unknown dataset type: {ds_type}")
+                    continue
+                
+                if train_ds is not None:
+                    train_datasets.append(train_ds)
+                    print(f"  Added {ds_type} train: {len(train_ds)} samples")
+                if val_ds is not None:
+                    val_datasets.append(val_ds)
+                    print(f"  Added {ds_type} val: {len(val_ds)} samples")
+            
+            # Combine datasets
+            if train_datasets:
+                self.train_ds = torch.utils.data.ConcatDataset(train_datasets)
+                print(f"[CombinedDataModule] Total train samples: {len(self.train_ds)}")
+            
+            if val_datasets:
+                self.val_ds = torch.utils.data.ConcatDataset(val_datasets)
+                print(f"[CombinedDataModule] Total val samples: {len(self.val_ds)}")
+    
+    def train_dataloader(self) -> DataLoader:
+        if self.train_ds is None:
+            raise RuntimeError("No training data configured")
+        return DataLoader(
+            self.train_ds,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            drop_last=True,
+            persistent_workers=self.num_workers > 0
+        )
+    
+    def val_dataloader(self) -> Optional[DataLoader]:
+        if self.val_ds is None:
+            return None
+        return DataLoader(
+            self.val_ds,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory
+        )

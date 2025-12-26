@@ -1,0 +1,57 @@
+# Combined Dataset Configuration
+# Combines SNEMI3D (neurons) and MitoEM2 (mitochondria) for multi-task training
+
+_target_: src.data.datamodule.CombinedDataModule
+
+# List of datasets to combine
+datasets:
+  # SNEMI3D - Neuron instance segmentation
+  - type: snemi3d
+    data_root: "data/SNEMI3D/"
+    train_volumes: ["AC3"]
+    val_volumes: ["AC4"]
+    semantic_class_id: 1  # neuron
+  
+  # MitoEM2 - Mitochondria instance segmentation
+  # Multiple cell types available in MitoEM2.0
+  - type: mitoem2
+    data_root: "data/MitoEM2/"
+    datasets:
+      - "Dataset001_ME2-Beta"      # Beta cells
+      - "Dataset002_ME2-Jurkat"    # Jurkat cells  
+      - "Dataset003_ME2-Macro"     # Macrophages
+      - "Dataset004_ME2-Mossy"     # Mossy fiber
+      - "Dataset005_ME2-Podo"      # Podocytes
+      - "Dataset006_ME2-Pyra"      # Pyramidal neurons (largest)
+      - "Dataset007_ME2-Sperm"     # Sperm cells
+      - "Dataset008_ME2-Stem"      # Stem cells
+    semantic_class_id: 2  # mitochondria
+    train_ratio: 0.8
+
+# Patch configuration
+patch_size: [32, 256, 256]  # (D, H, W)
+
+# Sampling
+patches_per_volume: 100
+
+# DataLoader configuration
+batch_size: 1
+num_workers: 4
+pin_memory: true
+
+# Caching
+cache_volumes: true
+
+# Augmentation (applied to all datasets)
+augmentation:
+  enabled: true
+  random_flip_prob: 0.5
+  random_rotate_prob: 0.5
+  intensity_shift:
+    enabled: true
+    offset_range: [-0.1, 0.1]
+    scale_range: [0.9, 1.1]
+  gaussian_noise:
+    enabled: true
+    std: 0.05
+

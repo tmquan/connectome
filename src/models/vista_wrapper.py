@@ -19,6 +19,7 @@ from einops import rearrange, repeat, reduce
 from einops.layers.torch import Rearrange, Reduce
 
 from .components.discriminative import DiscriminativeLoss, CombinedInstanceLoss
+from .metrics import InstanceSegmentationMetric, cluster_embeddings_for_metrics, compute_adjusted_rand_score
 
 
 class ConvBlock3D(nn.Module):
@@ -78,6 +79,7 @@ class VistaLightningModule(pl.LightningModule):
         self._init_heads()
         self._init_losses()
         self._init_class_embeddings()
+        self._init_metrics()
         
         # Inference settings
         self.sw_batch_size = 4
@@ -152,6 +154,17 @@ class VistaLightningModule(pl.LightningModule):
         
         self.class_embeddings = nn.Embedding(num_classes, embedding_dim)
         nn.init.normal_(self.class_embeddings.weight, mean=0.0, std=0.02)
+    
+    def _init_metrics(self):
+        """Initialize TorchMetrics for validation."""
+        # Instance segmentation metric (ARI)
+        # Using Euclidean distance with bandwidth=1.5 for better discrimination
+        # of untrained embeddings (random vectors have large Euclidean distances)
+        self.val_ari = InstanceSegmentationMetric(
+            bandwidth=1.5,
+            min_cluster_size=20,
+            use_euclidean=True
+        )
     
     def _load_pretrained_weights(self, pretrained_path: str):
         """Load pretrained weights."""
@@ -289,8 +302,8 @@ class VistaLightningModule(pl.LightningModule):
         self,
         batch: Dict[str, torch.Tensor],
         batch_idx: int
-    ) -> torch.Tensor:
-        """Validation step."""
+    ) -> Dict[str, torch.Tensor]:
+        """Validation step with TorchMetrics-based instance segmentation metrics."""
         images = batch['image']
         labels_semantic, labels_instance = self._split_labels(batch['label'])
         
@@ -311,11 +324,24 @@ class VistaLightningModule(pl.LightningModule):
         
         total_loss = loss_semantic + loss_disc
         
-        self.log('val/loss', total_loss, on_epoch=True, prog_bar=True)
-        self.log('val/loss_sem', loss_semantic, on_epoch=True)
-        self.log('val/loss_disc', loss_disc, on_epoch=True)
+        # Update TorchMetrics-based ARI (handles distributed sync automatically)
+        # Only compute every 5th batch to save time
+        if batch_idx % 5 == 0:
+            self.val_ari.update(embeddings, labels_instance, neuron_mask)
         
-        return total_loss
+        # Log metrics
+        self.log('val/loss', total_loss, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log('val/loss_sem', loss_semantic, on_epoch=True, sync_dist=True)
+        self.log('val/loss_disc', loss_disc, on_epoch=True, sync_dist=True)
+        
+        return {'loss': total_loss}
+    
+    def on_validation_epoch_end(self):
+        """Compute and log ARI at end of validation epoch."""
+        ari = self.val_ari.compute()
+        # Don't use sync_dist - TorchMetrics handles DDP sync internally
+        self.log('val/ari', ari, prog_bar=True)
+        self.val_ari.reset()
     
     def predict_step(
         self,
