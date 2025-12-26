@@ -1,0 +1,48 @@
+# MitoEM 2.0 Data Configuration
+# Mitochondria instance segmentation dataset
+# Uses nnUNet-style folder structure
+
+_target_: src.data.datamodule.MitoEM2DataModule
+
+# Data root - point to extracted dataset folder
+# e.g., /localhome/local-tranminhq/tmp/MitoEM2/Dataset001_ME2-Beta/
+data_root: "data/MitoEM2/"
+
+# File paths (relative to data_root)
+# For nnUNet format: imagesTr/{name}_0000.tif, labelsTr/{name}.tif
+train_image_paths: []  # To be populated based on dataset
+train_label_paths: []
+val_image_paths: []
+val_label_paths: []
+
+# Patch configuration
+# MitoEM volumes vary in size, use smaller patches for memory
+patch_size: [64, 256, 256]  # (D, H, W)
+
+# Sampling
+patches_per_volume: 100
+
+# DataLoader configuration
+batch_size: 2
+num_workers: 4
+pin_memory: true
+
+# Caching
+cache_volumes: true
+
+# Semantic class: mitochondria = 2 (from nlp_labels registry)
+semantic_class_id: 2
+
+# Augmentation (inherited from base)
+augmentation:
+  enabled: true
+  random_flip_prob: 0.5
+  random_rotate_prob: 0.5
+  intensity_shift:
+    enabled: true
+    offset_range: [-0.1, 0.1]
+    scale_range: [0.9, 1.1]
+  gaussian_noise:
+    enabled: true
+    std: 0.05
+

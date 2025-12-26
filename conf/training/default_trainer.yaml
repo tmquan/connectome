@@ -1,0 +1,43 @@
+# Default Training Configuration
+# PyTorch Lightning Trainer settings
+
+# Training duration
+max_epochs: 100
+max_steps: -1  # -1 means unlimited, use max_epochs
+
+# Hardware configuration
+accelerator: "gpu"
+devices: 1
+strategy: "ddp_find_unused_parameters_true"  # DDP with unused params detection (for class_embeddings)
+
+# Precision settings
+precision: 16  # AMP for memory efficiency with VISTA3D
+
+# Gradient management
+gradient_clip_val: 1.0
+gradient_clip_algorithm: "norm"
+accumulate_grad_batches: 1
+
+# Logging
+log_every_n_steps: 50
+enable_progress_bar: true
+enable_model_summary: true
+
+# Validation
+val_check_interval: 1.0  # Check every epoch
+check_val_every_n_epoch: 1
+num_sanity_val_steps: 2
+
+# Debugging / Development
+fast_dev_run: false
+limit_train_batches: 1.0
+limit_val_batches: 1.0
+limit_test_batches: 1.0
+
+# Determinism
+deterministic: false  # Set true for reproducibility (slower)
+benchmark: true       # Enable cuDNN autotuner
+
+# Profiling
+profiler: null  # Options: null, simple, advanced, pytorch
+

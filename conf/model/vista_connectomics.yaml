@@ -1,0 +1,45 @@
+# VISTA3D Connectomics Model Configuration
+# Defines the VistaLightningModule architecture and loss parameters
+
+_target_: src.models.vista_wrapper.VistaLightningModule
+
+net_config:
+  # SegResNet backbone configuration
+  init_filters: 32
+  in_channels: 1
+  feature_dim: 48
+  embedding_dim: 16
+  dropout: 0.2
+  blocks_down: [1, 2, 2, 4]
+  blocks_up: [1, 1, 1]
+  
+  # Optional: Load pretrained VISTA3D weights
+  pretrained_path: null
+  freeze_encoder: false
+
+loss_config:
+  # Discriminative Loss for instance embedding
+  discriminative:
+    delta_var: 0.5      # Margin for variance loss
+    delta_dist: 1.5     # Margin for distance loss
+    norm: 2             # L2 norm
+    alpha: 1.0          # Weight for variance term
+    beta: 1.0           # Weight for distance term
+    gamma: 0.001        # Weight for regularization term
+  
+  # Semantic segmentation loss weights
+  semantic:
+    dice_weight: 1.0
+    ce_weight: 0.5
+
+optimizer_config:
+  lr: 1e-4
+  weight_decay: 1e-5
+  max_epochs: ${training.max_epochs}
+  
+  # Learning rate scheduler
+  scheduler:
+    type: "cosine"      # Options: cosine, step, plateau
+    warmup_epochs: 5
+    min_lr: 1e-6
+

@@ -1,0 +1,31 @@
+# Master Configuration - VISTA3D Connectomics Adaptation
+# Follows cosmed-style Hydra configuration patterns
+
+defaults:
+  - model: vista_connectomics
+  - data: snemi3d
+  - training: default_trainer
+  - callbacks: checkpoint
+  - _self_
+
+project_name: "VISTA_Connectomics"
+seed: 42
+work_dir: ${hydra:runtime.cwd}
+
+# NLP Label Registry (Global Definition)
+# Maps biological entity names to integer IDs for VISTA3D embedding lookup
+nlp_labels:
+  background: 0
+  neuron: 1
+  mitochondria: 2
+  membrane: 3
+  synapse: 4
+
+# Hydra output configuration
+hydra:
+  run:
+    dir: outputs/${project_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/${project_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+

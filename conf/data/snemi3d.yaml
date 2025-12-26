@@ -1,0 +1,42 @@
+# SNEMI3D Data Configuration
+# High-throughput data pipeline for SNEMI3D connectomics benchmark
+
+_target_: src.data.datamodule.SNEMI3DDataModule
+
+# Data paths - symlinked to /scratch/SNEMI3D/data
+data_root: "data/"
+
+# Volume configuration
+# SNEMI3D provides AC3 and AC4 volumes
+train_volumes: ["AC3"]
+val_volumes: ["AC4"]
+
+# Patch configuration
+# SNEMI3D volumes are (100, 1024, 1024)
+# Patch size should balance GPU memory and context
+patch_size: [32, 200, 200]  # (D, H, W) - Z is anisotropic in EM
+
+# Sampling
+patches_per_volume: 100  # Patches sampled per epoch per volume
+
+# DataLoader configuration
+batch_size: 2
+num_workers: 4
+pin_memory: true
+
+# Caching - cache volumes in RAM for faster training
+cache_volumes: true
+
+# Augmentation configuration
+augmentation:
+  enabled: true
+  random_flip_prob: 0.5
+  random_rotate_prob: 0.5
+  intensity_shift:
+    enabled: true
+    offset_range: [-0.1, 0.1]
+    scale_range: [0.9, 1.1]
+  gaussian_noise:
+    enabled: true
+    std: 0.05
+
